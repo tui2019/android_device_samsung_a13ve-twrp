@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     name: Build TWRP for Samsung Galaxy A13 (a13ve)
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Maximize Build Space
