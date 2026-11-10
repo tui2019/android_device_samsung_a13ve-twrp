@@ -1,0 +1,81 @@
+name: Build TWRP Recovery
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build TWRP for Samsung Galaxy A13 (a13ve)
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2048
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gperf gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev \
+            x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils \
+            xsltproc unzip fontconfig libncurses5 python3 rsync cpio bc bison flex
+
+      - name: Setup Repo Tool
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
+
+      - name: Initialize TWRP 12.1 Manifest
+        run: |
+          mkdir -p ~/work
+          cd ~/work
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1 --depth=1
+
+      - name: Sync Minimal Manifest
+        run: |
+          cd ~/work
+          repo sync -c --no-clone-bundle --no-tags --optimized-fetch --prune --force-sync -j$(nproc)
+
+      - name: Checkout Device Tree
+        uses: actions/checkout@v4
+        with:
+          path: 'device/samsung/a13ve'
+
+      - name: Link Device Tree into Build Tree
+        run: |
+          mkdir -p ~/work/device/samsung
+          cp -r device/samsung/a13ve ~/work/device/samsung/a13ve
+
+      - name: Build TWRP Recovery Image
+        run: |
+          cd ~/work
+          source build/envsetup.sh
+          lunch twrp_a13ve-eng || lunch twrp_a13ve-userdebug
+          mka recoveryimage -j$(nproc)
+
+      - name: Package Odin Flashable TAR (POSIX ustar format)
+        run: |
+          cd ~/work/out/target/product/a13ve
+          ls -lh recovery.img
+          # Odin requires strict classic ustar format without POSIX extended PaxHeaders
+          tar --format=ustar -c recovery.img > recovery.tar
+          ls -lh recovery.tar
+
+      - name: Upload TWRP Recovery Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-a13ve-4.19
+          path: |
+            ~/work/out/target/product/a13ve/recovery.img
+            ~/work/out/target/product/a13ve/recovery.tar
